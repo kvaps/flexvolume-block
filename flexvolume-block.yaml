@@ -1,0 +1,27 @@
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: flexvolume-block
+  namespace: kube-system
+spec:
+  template:
+    metadata:
+      name: flexvolume-block
+      labels:
+        app: flexvolume-block
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      containers:
+        - image: kvaps/flexvolume-block:latest
+          imagePullPolicy: Always
+          name: flexvolume-block
+          volumeMounts:
+            - mountPath: /flexmnt
+              name: flexvolume-mount
+      volumes:
+        - name: flexvolume-mount
+          hostPath:
+            path: /usr/libexec/kubernetes/kubelet-plugins/volume/exec

@@ -1,0 +1,141 @@
+#!/bin/sh
+
+# Copyright 2018 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Notes:
+#  - Please install "jq" package before using this driver.
+
+usage() {
+  err "Invalid usage. Usage: "
+  err "\t$0 init"
+  err "\t$0 mountdevice <mount dir> <mount device> <json params>"
+  err "\t$0 unmountdevice <mount dir>"
+  exit 1
+}
+
+err() {
+  echo -e $* 1>&2
+}
+
+log() {
+  echo -e $* >&1
+}
+
+mountdevice() {
+  mntPath=$1
+  device=$(echo $2 | jq -r '.device')
+  fsType=$(echo $2 | jq -r '.["kubernetes.io/fsType"]')
+  fsck=$(echo $2 | jq -r '.fsck')
+  mmpUpdateInterval=$(echo $3 | jq -r '.mmpUpdateInterval')
+  fsckOptions=$(echo $2 | jq -r '.fsckOptions')
+  mountOptions=$(echo $2 | jq -r '.mountOptions')
+
+  case null in
+    ${mmpUpdateInterval} ) mmpUpdateInterval=5  ;&
+    ${fsckOptions}       ) fsckOptions="a" ;&
+    ${mountOptions}      ) mountOptions="" ;;
+  esac
+
+  if [ -n "${mmpUpdateInterval}" ] && [ "${fsType}" == "ext4" ]; then
+    mmpOptions="-O mmp -E mmp_update_interval=${mmpUpdateInterval}"
+  fi
+
+  if [ ! -f "${device}" ]; then
+    err "{\"status\": \"Failure\", \"message\": \"Device ${device} does not exist\"}"
+    exit 1
+  fi
+
+  if mountpoint -q "${mntPath}"; then
+    log "{\"status\": \"Success\"}"
+    exit 0
+  fi
+
+  deviceFS=$(blkid -o udev ${device} 2>/dev/null|grep "ID_FS_TYPE"|cut -d"=" -f2)
+  if [ "${deviceFS}" == "" ]; then
+    mkfs -t "${fsType}" "${mmpOptions}" "${device}" >/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+      err "{ \"status\": \"Failure\", \"message\": \"Failed to create fs ${fsType} on device ${device}\"}"
+      exit 1
+    fi
+  fi
+
+  case "${fsck}" in
+    true|1|yes )
+      fsck -${fsckOptions} -t "${fsType}" "${device}" &> /dev/null
+      if [ $? -ne 0 ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"Fsck -${FSCK_OPTIONS} check for ${FILE} was failed\"}"
+        exit 1
+      fi
+    ;;
+  esac
+
+  mkdir -p "${mntPath}" &> /dev/null
+
+  mount -o "${mountOptions}" "${device}" "${mntPath}" &> /dev/null
+  if [ $? -ne 0 ]; then
+    err "{ \"status\": \"Failure\", \"message\": \"Failed to mount device ${device} at ${mntPath}\"}"
+    qemu-nbd -d "${NBDDEVICE}" &>/dev/null
+    exit 1
+  fi
+
+  log "{\"status\": \"Success\"}"
+  exit 0
+}
+
+unmountdevice() {
+  mntPath=$1
+  if [ -d ${mntPath} ] && mountpoint -q "${mntPath}"; then
+    umount ${mntPath} &> /dev/null
+    if [ $? -ne 0 ]; then
+      err "{ \"status\": \"Failed\", \"message\": \"Failed to unmount volume at ${mntPath}\"}"
+      exit 1
+    fi
+  fi
+  log "{\"status\": \"Success\"}"
+  exit 0
+}
+
+op=$1
+
+if ! command -v jq >/dev/null 2>&1; then
+  err "{ \"status\": \"Failure\", \"message\": \"'jq' binary not found. Please install jq package before using this driver\"}"
+  exit 1
+fi
+
+if [ "$op" = "init" ]; then
+  log '{"status": "Success", "capabilities": {"attach": false}}'
+  exit 0
+fi
+
+if [ $# -lt 2 ]; then
+  usage
+fi
+
+shift
+
+case "$op" in
+  mountdevice)
+    mountdevice $*
+    ;;
+  unmountdevice)
+    unmountdevice $*
+    ;;
+  *)
+    log "{ \"status\": \"Not supported\" }"
+    exit 0
+    ;;
+esac
+
+exit 1
