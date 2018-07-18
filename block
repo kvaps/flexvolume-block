@@ -42,9 +42,9 @@ domount() {
   fsckOptions=$(echo $2 | jq -r '.fsckOptions')
   mountOptions=$(echo $2 | jq -r '.mountOptions')
 
-  [ null = ${mmpUpdateInterval} ] && mmpUpdateInterval=5
-  [ null = ${fsckOptions}       ] && fsckOptions="a"
-  [ null = ${mountOptions}      ] && mountOptions=""
+  [ null = "${mmpUpdateInterval}" ] && mmpUpdateInterval=5
+  [ null = "${fsckOptions}"       ] && fsckOptions="a"
+  [ null = "${mountOptions}"      ] && mountOptions=""
 
   if [ -n "${mmpUpdateInterval}" ] && [ "${fsType}" = "ext4" ]; then
     mmpOptions="-O mmp -E mmp_update_interval=${mmpUpdateInterval}"
