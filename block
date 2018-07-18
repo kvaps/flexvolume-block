@@ -33,7 +33,7 @@ log() {
   echo $* >&1
 }
 
-mountdevice() {
+domount() {
   mntPath=$1
   device=$(echo $2 | jq -r '.device')
   fsType=$(echo $2 | jq -r '.["kubernetes.io/fsType"]')
@@ -92,7 +92,7 @@ mountdevice() {
   exit 0
 }
 
-unmountdevice() {
+unmount() {
   mntPath=$1
   if [ -d ${mntPath} ] && mountpoint -q "${mntPath}"; then
     umount ${mntPath} &> /dev/null
@@ -106,6 +106,8 @@ unmountdevice() {
 }
 
 op=$1
+
+echo $@ >> /tmp/123
 
 if ! command -v jq >/dev/null 2>&1; then
   err "{ \"status\": \"Failure\", \"message\": \"'jq' binary not found. Please install jq package before using this driver\"}"
@@ -124,11 +126,11 @@ fi
 shift
 
 case "$op" in
-  mountdevice)
-    mountdevice $*
+  mount)
+    domount $*
     ;;
-  unmountdevice)
-    unmountdevice $*
+  unmount)
+    unmount $*
     ;;
   *)
     log "{ \"status\": \"Not supported\" }"
